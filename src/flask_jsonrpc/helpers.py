@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import typing as t
+import inspect
 from operator import getitem
 import itertools
 from dataclasses import field, asdict, dataclass
@@ -267,3 +268,64 @@ def get(obj: t.Any, path: str, default: t.Any = None) -> t.Any:  # noqa: ANN401
     except (TypeError, KeyError):
         return default
     return obj_val
+
+
+def function_name(func: t.Callable[..., t.Any]) -> str:
+    """
+    Return the qualified name of the given function.
+
+    Builtins and types from the :mod:`typing` package get special treatment by having the module
+    name stripped from the generated name.
+
+    """
+    # For partial functions and objects with __call__ defined, __qualname__ does not exist
+    # For functions run in `exec` with a custom namespace, __module__ can be None
+    module = getattr(func, '__module__', '') or ''
+    qualname = (module + '.') if module not in ('builtins', '') else ''
+    return qualname + getattr(func, '__qualname__', repr(func))
+
+
+def qualified_name(obj: t.Any, *, add_class_prefix: bool = False) -> str:  # noqa: ANN401
+    """
+    Return the qualified name (e.g. package.module.Type) for the given object.
+
+    Builtins and types from the :mod:`typing` package get special treatment by having
+    the module name stripped from the generated name.
+
+    """
+    if obj is None:
+        return 'None'
+    elif inspect.isclass(obj):
+        prefix = 'class ' if add_class_prefix else ''
+        type_ = obj
+    else:
+        prefix = ''
+        type_ = type(obj)
+
+    module = type_.__module__
+    qualname = type_.__qualname__
+    name = qualname if module in ('typing', 'builtins') else f'{module}.{qualname}'
+    return prefix + name
+
+
+def _find_original(func: t.Callable[..., t.Any]) -> t.Callable[..., t.Any] | t.Any:  # noqa: ANN401
+    """
+    unwrap できれば unwrap、
+    できなければ closure から元関数を探す
+    """
+    # 1. __wrapped__ チェーンがある場合
+    try:
+        unwrapped = inspect.unwrap(func)
+        if unwrapped is not func:
+            return unwrapped
+    except Exception:
+        pass
+
+    # 2. closure fallback（wraps なし対策）
+    for cell in getattr(func, '__closure__', []) or []:
+        obj = cell.cell_contents
+        if inspect.isfunction(obj):
+            return obj
+
+    # 3. どうしても無理なら現状の func
+    return func

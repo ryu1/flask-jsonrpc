@@ -88,8 +88,88 @@ def test_app_decorators_wrapped(session: 'Session', api_url: str) -> None:
     # XXX: Typeguard does not instrument wrapped functions
     data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.wrappedDecorator', 'params': [1]}
     rv = session.post(f'{api_url}/decorators', json=data)
-    assert rv.json() == {'id': 1, 'jsonrpc': '2.0', 'result': 'Hello 1 from decorator, ;)'}
+    assert rv.json() == {
+        'id': 1,
+        'jsonrpc': '2.0',
+        'error': {
+            'code': -32602,
+            'data': {'message': 'argument "string" (int) is not an instance of str'},
+            'message': 'Invalid params',
+            'name': 'InvalidParamsError',
+        },
+    }
+    assert rv.status_code == 400
+
+
+def test_app_decorators_with_any(session: 'Session', api_url: str) -> None:
+    data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.decorator_with_any', 'params': ['Python']}
+    rv = session.post(f'{api_url}/decorators', json=data)
+    assert rv.json() == {'id': 1, 'jsonrpc': '2.0', 'result': 'Hello Python from decorator, ;)'}
     assert rv.status_code == 200
+
+    data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.decorator_with_any', 'params': 'Python'}
+    rv = session.post(f'{api_url}/decorators', json=data)
+    assert rv.json() == {
+        'id': 1,
+        'jsonrpc': '2.0',
+        'error': {
+            'code': -32602,
+            'data': {'message': 'Parameter structures are by-position (list) or by-name (dict): Python'},
+            'message': 'Invalid params',
+            'name': 'InvalidParamsError',
+        },
+    }
+    assert rv.status_code == 400
+
+    data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.decorator_with_any', 'params': [1]}
+    rv = session.post(f'{api_url}/decorators', json=data)
+    assert rv.json() == {
+        'id': 1,
+        'jsonrpc': '2.0',
+        'error': {
+            'code': -32602,
+            'data': {'message': 'argument "string" (int) is not an instance of str'},
+            'message': 'Invalid params',
+            'name': 'InvalidParamsError',
+        },
+    }
+    assert rv.status_code == 400
+
+
+def test_app_decorators_wrapped_with_any(session: 'Session', api_url: str) -> None:
+    data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.wrappedDecorator_with_any', 'params': ['Python']}
+    rv = session.post(f'{api_url}/decorators', json=data)
+    assert rv.json() == {'id': 1, 'jsonrpc': '2.0', 'result': 'Hello Python from decorator, ;)'}
+    assert rv.status_code == 200
+
+    data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.wrappedDecorator_with_any', 'params': 'Python'}
+    rv = session.post(f'{api_url}/decorators', json=data)
+    assert rv.json() == {
+        'id': 1,
+        'jsonrpc': '2.0',
+        'error': {
+            'code': -32602,
+            'data': {'message': 'Parameter structures are by-position (list) or by-name (dict): Python'},
+            'message': 'Invalid params',
+            'name': 'InvalidParamsError',
+        },
+    }
+    assert rv.status_code == 400
+
+    # XXX: Typeguard does not instrument wrapped functions
+    data = {'id': 1, 'jsonrpc': '2.0', 'method': 'decorators.wrappedDecorator_with_any', 'params': [1]}
+    rv = session.post(f'{api_url}/decorators', json=data)
+    assert rv.json() == {
+        'id': 1,
+        'jsonrpc': '2.0',
+        'error': {
+            'code': -32602,
+            'data': {'message': 'argument "string" (int) is not an instance of str'},
+            'message': 'Invalid params',
+            'name': 'InvalidParamsError',
+        },
+    }
+    assert rv.status_code == 400
 
 
 def test_app_system_describe(session: 'Session', api_url: str) -> None:
@@ -111,8 +191,24 @@ def test_app_system_describe(session: 'Session', api_url: str) -> None:
             'type': 'method',
             'validation': True,
         },
+        'decorators.decorator_with_any': {
+            'name': 'decorators.decorator_with_any',
+            'notification': True,
+            'params': [{'name': 'string', 'type': 'String'}],
+            'returns': {'name': 'default', 'type': 'String'},
+            'type': 'method',
+            'validation': True,
+        },
         'decorators.wrappedDecorator': {
             'name': 'decorators.wrappedDecorator',
+            'notification': True,
+            'params': [{'name': 'string', 'type': 'String'}],
+            'returns': {'name': 'default', 'type': 'String'},
+            'type': 'method',
+            'validation': True,
+        },
+        'decorators.wrappedDecorator_with_any': {
+            'name': 'decorators.wrappedDecorator_with_any',
             'notification': True,
             'params': [{'name': 'string', 'type': 'String'}],
             'returns': {'name': 'default', 'type': 'String'},
