@@ -26,26 +26,35 @@
 # POSSIBILITY OF SUCH DAMAGE.
 from __future__ import annotations
 
+import sys
 import typing as t
+import inspect
 from inspect import Parameter, _empty, signature, isfunction
 import logging
 import functools
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 import typing_inspect
 
 # Added in version 3.11.
 from typing_extensions import Self
 
-from typeguard import typechecked
+from typeguard import TypeCheckError, check_type
 from werkzeug.utils import cached_property
 
 from flask_jsonrpc.conf import settings
+from flask_jsonrpc.helpers import function_name, _find_original, qualified_name
 from flask_jsonrpc.types.methods import MethodAnnotatedType
 
 if t.TYPE_CHECKING:
     from flask_jsonrpc.site import JSONRPCSite
     from flask_jsonrpc.views import JSONRPCView
+
+if sys.version_info >= (3, 11):
+    NeverType = t.Never
+else:
+    # Python 3.10 以下では typing_extensions から
+    from typing_extensions import Never as NeverType
 
 
 class JSONRPCDecoratorMixin:
@@ -203,25 +212,90 @@ class JSONRPCDecoratorMixin:
             fn_annotations = self._get_type_hints_by_signature(fn, fn_annotations)
         return fn_annotations
 
-    def _typechecked_wraps(self: Self, view_func: t.Callable[..., t.Any]) -> t.Callable[..., t.Any]:
-        """Wrap the view function with type checking, preserving wrappers.
-
-        Args:
-            view_func (typing.Callable[..., typing.Any]): The view function to wrap.
-
-        Returns:
-            typing.Callable[..., typing.Any]: The wrapped view function with type checking.
+    def _typechecked_wraps(self: Self, view_func: t.Callable[..., t.Any]) -> t.Callable[..., t.Any]:  # noqa: C901
+        """Wrap the view function with type checking, preserving wrappers
+        (supports functions with and without functools.wraps).
         """
-        wrapped_view_funcs = self._get_function_and_wrappers(view_func)
-        new_view_func = typechecked(wrapped_view_funcs.pop())
-        wrapped_view_funcs.append(new_view_func)
+        # 🔑 型情報取得用の「元関数」
+        original = _find_original(view_func)
 
-        fn_wrapper = fn_wrapped = wrapped_view_funcs.pop()
-        while len(wrapped_view_funcs) > 0:
-            fn_wrapper = wrapped_view_funcs.pop()
-            functools.update_wrapper(fn_wrapper, fn_wrapped)
-            fn_wrapped = fn_wrapper
-        return fn_wrapper
+        @functools.wraps(view_func)
+        def typechecked_sync(*args: t.Any, **kwargs: t.Any) -> t.Any:  # noqa: ANN401
+            sig = inspect.signature(original)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            type_hints = t.get_type_hints(original)
+
+            for name, value in bound.arguments.items():
+                if name in type_hints:
+                    annotation = type_hints[name]
+                    if annotation is t.NoReturn or annotation is NeverType:
+                        exc = TypeCheckError(f'{function_name(original)}() was declared never to be called but it was')
+                        raise exc
+                    try:
+                        check_type(value, type_hints[name])
+                    except TypeCheckError as exc:
+                        qualname = qualified_name(value, add_class_prefix=True)
+                        exc.args = (f'argument "{name}" ({qualname}) {exc.args[0]}',)
+                        exc._path = deque()
+                        # exc.append_path_element(f'argument "{name}" ({qualname})')
+                        raise
+
+            retval = view_func(*args, **kwargs)
+
+            if 'return' in type_hints and not inspect.iscoroutinefunction(original):
+                try:
+                    check_type(retval, type_hints['return'])
+                except TypeCheckError as exc:
+                    qualname = qualified_name(retval, add_class_prefix=True)
+                    exc.append_path_element(f'the return value ({qualname})')
+                    raise
+
+            return retval
+
+        @functools.wraps(view_func)
+        async def typechecked_async(*args: t.Any, **kwargs: t.Any) -> t.Any:  # noqa: ANN401
+            sig = inspect.signature(original)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            type_hints = t.get_type_hints(original)
+
+            for name, value in bound.arguments.items():
+                if name in type_hints:
+                    annotation = type_hints[name]
+                    if annotation is t.NoReturn or annotation is NeverType:
+                        exc = TypeCheckError(f'{function_name(original)}() was declared never to be called but it was')
+                        raise exc
+                    try:
+                        check_type(value, type_hints[name])
+                    except TypeCheckError as exc:
+                        qualname = qualified_name(value, add_class_prefix=True)
+                        exc.args = (f'argument "{name}" ({qualname}) {exc.args[0]}',)
+                        exc._path = deque()
+                        # exc.append_path_element(f'argument "{name}" ({qualname})')
+                        raise
+
+            retval = await view_func(*args, **kwargs)
+
+            if 'return' in type_hints and not inspect.iscoroutinefunction(original):
+                try:
+                    check_type(retval, type_hints['return'])
+                except TypeCheckError as exc:
+                    qualname = qualified_name(retval, add_class_prefix=True)
+                    exc.append_path_element(f'the return value ({qualname})')
+                    raise
+
+            return retval
+
+        wrapper = typechecked_async if inspect.iscoroutinefunction(original) else typechecked_sync
+        # wrapper = typechecked_sync
+        # 🔧 possible: __wrapped__ を後付け（inspect / typeguard 用）
+        if original is not view_func and not hasattr(wrapper, '__wrapped__'):
+            wrapper.__wrapped__ = original
+
+        return wrapper
 
     @cached_property
     def logger(self: Self) -> logging.Logger:

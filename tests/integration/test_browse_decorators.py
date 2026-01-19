@@ -128,7 +128,15 @@ def test_decorators_wrapped_decorator_display(
         (
             {'string': ''},
             {'jsonrpc': '2.0', 'method': 'decorators.wrappedDecorator', 'params': {}},
-            {'jsonrpc': '2.0', 'result': 'Hello None from decorator, ;)'},
+            {
+                'error': {
+                    'code': -32602,
+                    'data': {'message': 'argument "string" (None) is not an instance of str'},
+                    'message': 'Invalid params',
+                    'name': 'InvalidParamsError',
+                },
+                'jsonrpc': '2.0',
+            },
         ),
         (
             {'string': 'Functools'},

@@ -47,6 +47,23 @@ def jsonrpc_decorator_wrapped(fn: t.Callable[..., str]) -> t.Callable[..., str]:
     return decorator
 
 
+def jsonrpc_decorator_with_any(fn: t.Callable[..., str]) -> t.Callable[..., str]:
+    def decorator(string: t.Any) -> str:  # noqa: ANN401
+        rv = fn(string)
+        return f'{rv} from decorator, ;)'
+
+    return decorator
+
+
+def jsonrpc_decorator_wrapped_with_any(fn: t.Callable[..., str]) -> t.Callable[..., str]:
+    @functools.wraps(fn)
+    def decorator(string: t.Any) -> str:  # noqa: ANN401
+        rv = fn(string)
+        return f'{rv} from decorator, ;)'
+
+    return decorator
+
+
 jsonrpc = JSONRPCBlueprint('decorators', __name__)
 
 
@@ -59,4 +76,16 @@ def decorator(string: str) -> str:
 @jsonrpc.method('decorators.wrappedDecorator')
 @jsonrpc_decorator_wrapped
 def wrappedDecorator(string: str) -> str:
+    return f'Hello {string}'
+
+
+@jsonrpc.method('decorators.decorator_with_any')
+@jsonrpc_decorator
+def decorator_with_any(string: str) -> str:
+    return f'Hello {string}'
+
+
+@jsonrpc.method('decorators.wrappedDecorator_with_any')
+@jsonrpc_decorator_wrapped
+def wrappedDecorator_with_any(string: str) -> str:
     return f'Hello {string}'
